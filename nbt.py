@@ -1,37 +1,8 @@
-#!/usr/bin/env python
-
-"""
-Parser for the Named Binary Tag format as specified
-[by Notch](http://web.archive.org/web/20110723210920/http://www.minecraft.net/docs/NBT.txt).
-
-Currently only decoding is supported, encoding may be added if there is demand for it.
-
-The GitHub repository (and downloads) can be found [here](https://github.com/x3ro/nbt.py).
-"""
-
 import argparse
 import struct
 import gzip
 import os
 import json
-
-
-
-# == Command line options ==
-
-parser = argparse.ArgumentParser(
-    description='Convert NBT file to JSON',
-    formatter_class=argparse.RawTextHelpFormatter
-)
-
-parser.add_argument('files', nargs=1, metavar='FILE',
-                    help='Specifies file to be processed.')
-
-args = parser.parse_args()
-
-if len(args.files) < 1:
-    exit("Please specify at least one file!")
-
 
 
 # == Necessary information for the parser ==
@@ -49,6 +20,7 @@ class Tag:
     STRING = 8
     LIST = 9
     COMPOUND = 10
+    INT_ARRAY = 11
 
 
 # == Generic parsing functions ==
@@ -56,7 +28,6 @@ class Tag:
 def read_tag_start(f, assume_unnamed):
     """
     Parses a tag start (i.e. the beginning of a tag).
-
     * `f` -- The file object from which the tag should be read
     * `assume_unnamed` -- This flag should be set if we know that the tag which we are
         about to read is unnamed (see specs for more information)
@@ -80,7 +51,6 @@ def read_tag_start(f, assume_unnamed):
 def read_tag_name(f, tag):
     """
     Get a tag's name from the file currently being read.
-
     * `f` -- The file being read
     * `tag` -- Tag information as extracted by `#read_tag_start
     """
@@ -102,7 +72,6 @@ def read_tag_name(f, tag):
 def read_tag_type_string(f):
     """
     Expected string tag format:
-
         TAG_Short length
         <"length" bytes of ASCII characters>
     """
@@ -114,7 +83,6 @@ def read_tag_type_string(f):
 def read_tag_type_list(f):
     """
     Expected list tag format:
-
         TAG_Byte tag_id
         TAG_Short length
         <"length" unnamed tags of type "tag_id">
@@ -134,7 +102,6 @@ def read_tag_type_list(f):
 def read_tag_type_byte_array(f):
     """
     Expected byte array format:
-
         TAG_Int length
         <"length" bytes>
     """
@@ -147,12 +114,25 @@ def read_tag_type_byte_array(f):
 
     return list
 
+def read_tag_type_intarray(f):
+    """
+    Expected byte array format:
+        TAG_Int length
+        <"length" int>
+    """
+
+    length = tag_functions[Tag.INT](f)
+
+    list = [ ]
+    for i in range(0, length):
+        list.append(tag_functions[Tag.INT](f))
+
+    return list
 
 
 def read_tag_type_compound(f, assume_unnamed=False):
     """
     Expected compound tag format: a number of named tags until a Tag_END is found, i.e.:
-
         <named_tag_1..named_tag_N>
         TAG_end
     """
@@ -190,23 +170,15 @@ tag_functions = {
     Tag.BYTE_ARRAY: read_tag_type_byte_array,
     Tag.STRING: read_tag_type_string,
     Tag.LIST: read_tag_type_list,
-    Tag.COMPOUND: read_tag_type_compound
+    Tag.COMPOUND: read_tag_type_compound,
+    Tag.INT_ARRAY: read_tag_type_intarray
 }
 
 
-# ---
-
-# ==== Invoke the parser ====
-
-f = gzip.GzipFile(args.files[0], 'rb')
-x = tag_functions[Tag.COMPOUND](f)
-
-
-
-# ==== Print the resulting JSON-string to stdout ====
-print json.JSONEncoder().encode(x)
-
-
-
-
-
+def convert2json(pNBTFile):
+    f = gzip.GzipFile(pNBTFile, 'rb')
+    x = tag_functions[Tag.COMPOUND](f)
+    jsonString = json.JSONEncoder().encode(x)
+    if jsonString.startswith("{\"\": "):
+        jsonString = "{\"root_tag\": " + jsonString[5:]
+    return jsonString
